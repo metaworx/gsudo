@@ -14,8 +14,11 @@ namespace gsudo.Commands
 {
     class StatusCommand : ICommand
     {
+        private uint pid;
+
         public bool AsJson { get; set; }
         public string Key { get; set; }
+        public uint Pid { get => pid; set => pid = value; }
 
         public Task<int> Execute()
         {
@@ -50,7 +53,11 @@ namespace gsudo.Commands
 
             result["IsRedirected"] = Console.IsInputRedirected || Console.IsOutputRedirected || Console.IsErrorRedirected;
 
-            if (!string.IsNullOrEmpty(Key))
+            if (this.pid > 0)
+            {
+                PrintConsoleProcessList();
+            }
+            else if (!string.IsNullOrEmpty(Key))
             {
                 if (result.ContainsKey(Key))
                 {
@@ -92,9 +99,9 @@ namespace gsudo.Commands
                 {
                     Console.Write($" \"{kv.Key}\":{GetJsonValue(kv.Value)},\n");
                 }
-                Console.Write($" \"ConsoleProcesses\": [\n");
+                Console.Write($" \"ConsoleProcesses\": {{\n");
                 PrintConsoleProcessList();
-                Console.WriteLine("\n ]\n}");
+                Console.WriteLine("\n }\n}");
             }
             else
             {
@@ -184,12 +191,14 @@ namespace gsudo.Commands
             var processIds = ConsoleHelper.GetConsoleAttachedPids();
             const string unknown = "(Unknown)";
 
-            if (!AsJson)
+            if (!AsJson && string.IsNullOrEmpty(Key))
                 Console.WriteLine($"{"PID".PadLeft(9)} {"PPID".PadLeft(9)} {"Integrity".PadRight(20)} {"UserName".PadRight(25)} {"Name"}");
 
             bool first = true;
             foreach (var pid in processIds.Reverse())
             {
+                if (this.pid > 0 && pid != this.pid) continue;
+
                 Process p = null;
                 string name = unknown;
                 string integrity = unknown;
@@ -223,18 +232,66 @@ namespace gsudo.Commands
                 catch
                 { }
 
-                if (!AsJson)
+                if (!string.IsNullOrEmpty(Key))
+                {
+                    dynamic val;
+
+                    switch (Key.ToLowerInvariant())
+                    {
+                        case "pid":
+                            val = pid;
+                            break;
+
+                        case "ppid":
+                            val = ppid;
+                            break;
+
+                        case "integritylevelnumeric":
+                            val = uint.Parse(integrity);
+                            break;
+
+                        case "integritylevel":
+                            val = integrityString;
+                            break;
+
+                        case "username":
+                            val = username;
+                            break;
+
+                        case "executable":
+                            val = integrityString;
+                            break;
+
+                        default:
+                            throw new ApplicationException($"\"{Key}\" is not a valid Status Key if --pid is used. Valid keys are: PID, PPID, IntegrityLevelNumeric, IntegrityLevel, UserName, Executable");
+                    }
+
+                    if (!AsJson)
+                        Console.WriteLine(val);
+                    else
+                    {
+                        Console.WriteLine(GetJsonValue(val));
+                    }
+                }
+
+                else if (!AsJson)
                 {
                     integrity = $"{integrityString} ({integrity})";
                     Console.WriteLine($"{pid.ToString(CultureInfo.InvariantCulture).PadLeft(9)} {ppid.ToString(CultureInfo.InvariantCulture).PadLeft(9)} {integrity.PadRight(20)} {username.PadRight(25)} {name}{((ownPid == pid) ? " (this gsudo status)" : null)}");
                 }
                 else
                 {
-                    if (!first) Console.WriteLine(",");
-                    Console.Write($"   {{\"Pid\":{pid}, \"Ppid\":{ppid}, \"IntegrityLevelNumeric\":{integrity}, \"IntegrityLevel\":\"{integrityString}\", \"UserName\":{GetJsonValue(username)}, \"Executable\":{GetJsonValue(name)}}}");
+                    if (!first)
+                        Console.WriteLine(",");
+                    if (this.pid == 0)
+                        Console.Write($"   \"{pid}\": ");
+                    Console.Write($"{{\"Pid\":{pid}, \"Ppid\":{ppid}, \"IntegrityLevelNumeric\":{integrity}, \"IntegrityLevel\":\"{integrityString}\", \"UserName\":{GetJsonValue(username)}, \"Executable\":{GetJsonValue(name)}}}");
                 }
                 first = false;
             }
+
+            if (first && this.pid > 0)
+                throw new ApplicationException($"PID \"{this.pid}\" is not attached to this console.");
         }
     }
 }

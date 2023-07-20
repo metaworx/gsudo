@@ -216,13 +216,22 @@ namespace gsudo.Helpers
             if (arg.In("status"))
             {
                 var cmd = new StatusCommand();
+                cmd.Pid = 0;
 
                 while (args.Count>0)
                 {
                     arg = DeQueueArg();
                     if (arg.In("--json"))
                         cmd.AsJson = true;
-                    else if(string.IsNullOrEmpty(cmd.Key))
+                    else if (arg.In("--pid"))
+                    {
+                        arg = DeQueueArg();
+                        uint pid = 0;
+                        bool success = uint.TryParse(arg, out pid);
+                        if (!success) throw new ApplicationException($"Invalid value for option --pid: {arg}");
+                        cmd.Pid = pid;
+                    }
+                    else if (string.IsNullOrEmpty(cmd.Key))
                         cmd.Key = arg;
                     else throw new ApplicationException($"Invalid option: {arg}");
                 };
